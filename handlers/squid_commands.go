@@ -118,9 +118,17 @@ func HandleSquidInfo(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
     chat_id := message.Chat.ID
     user_id := message.From.ID
 
+    fmt.Sprintf("Идентификатор чата: %v", chat_id)
+    fmt.Sprintf("Идентификатор пользователя: %v", user_id)
+
+
     var room structs.SquidRooms
     err := engine.DB.Preload("Members.User").Where("status = ?", "open").First(&room).Error
+    fmt.Sprintf("Ошибка?: %v", err)
+
     if err != nil {
+        fmt.Sprintf("Что то пошло не так....")
+
         if errors.Is(err, gorm.ErrRecordNotFound) {
             bot.Send(tgbotapi.NewMessage(chat_id, "❌ Сейчас нет активных открытых комнат."))
             return
