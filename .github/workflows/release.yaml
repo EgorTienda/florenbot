@@ -1,0 +1,106 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Версия релиза (например, v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      # Определяем единый тег/версию для использования в шагах
+      - name: Get release tag
+        id: tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "VERSION=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "VERSION=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          fi
+
+      # --- СБОРКА ДЛЯ LINUX ---
+      - name: Build Linux binary
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -v -o florenbot ./bot
+
+      - name: Create Linux tar.gz archive
+        run: |
+          tar -czvf florenbot-linux-amd64.tar.gz florenbot
+
+      # --- СБОРКА ДЛЯ WINDOWS ---
+      - name: Build Windows binary
+        run: |
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -v -o florenbot.exe ./bot
+
+      # --- ПОДПИСЬ WINDOWS EXECUTABLE (OSSLSIGNCODE) ---
+      - name: Install osslsigncode
+        run: |
+          sudo apt-get update && sudo apt-get install -y osslsigncode
+
+      - name: Decode Windows Certificate
+        run: |
+          echo "${{ secrets.WIN_CERT_BASE64 }}" | base64 --decode > cert.pfx
+
+      - name: Sign Windows binary
+        run: |
+          osslsigncode sign \
+            -pkcs12 cert.pfx \
+            -pass "${{ secrets.WIN_CERT_PASSWORD }}" \
+            -n "FlorenBot" \
+            -i "https://github.com/${{ github.repository }}" \
+            -ts "http://timestamp.digicert.com" \
+            -in florenbot.exe \
+            -out florenbot_signed.exe
+          mv florenbot_signed.exe florenbot.exe
+
+      - name: Create Windows zip archive
+        run: |
+          zip florenbot-windows-amd64.zip florenbot.exe
+
+      # --- GPG ПОДПИСЬ ---
+      - name: Import GPG Key
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
+
+      - name: Sign archives with GPG
+        run: |
+          gpg --batch --pinentry-mode loopback --detach-sign --armor florenbot-linux-amd64.tar.gz
+          gpg --batch --pinentry-mode loopback --detach-sign --armor florenbot-windows-amd64.zip
+
+      - name: Create publickey.asc file
+        run: |
+          cat << 'EOF' > publickey.asc
+          ${{ secrets.GPG_PUBLIC_KEY }}
+          EOF
+
+      # --- ПУБЛИКАЦИЯ РЕЛИЗА ---
+      - name: Publish Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.VERSION }}
+          files: |
+            florenbot-linux-amd64.tar.gz
+            florenbot-linux-amd64.tar.gz.asc
+            florenbot-windows-amd64.zip
+            florenbot-windows-amd64.zip.asc
+            publickey.asc

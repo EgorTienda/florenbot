@@ -143,6 +143,8 @@ func HandleProfilePrivate(user_id uint64, bot *tgbotapi.BotAPI, message *tgbotap
 
 }
 
+
+
 func HandleStart(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	chat_type := message.Chat.Type
 	chat_id := message.Chat.ID
