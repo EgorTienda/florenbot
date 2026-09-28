@@ -121,6 +121,7 @@ func Migrate(db *gorm.DB) error {
 
 	// 4. Создаем все остальные зависимые таблицы
 	return db.AutoMigrate(
+		&structs.Check{},
 		&structs.Role{},
 		&structs.UserCommandRestriction{},
 		&structs.UserPromo{},

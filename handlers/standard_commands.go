@@ -9,9 +9,11 @@ import (
 	"fmt"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"log"
+	"strconv"
 	"time"
 	"strings"
-	"strconv"
+	"gorm.io/gorm"
+
 )
 
 func HandleHelp(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
@@ -299,69 +301,295 @@ func HandleVip(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 }
 
 
+
+func HandleMyAccount(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
+	chatID := message.Chat.ID
+
+	if !message.Chat.IsPrivate() {
+		bot.Send(tgbotapi.NewMessage(chatID, "Эта команда работает только в личных сообщениях."))
+		return
+	}
+
+	if message.From == nil {
+		return
+	}
+
+	userID := message.From.ID
+
+	// Ищем счет по owner_id (Telegram ID скрыт внутри базы)
+	userCheck, err := helpers.GetCheck(uint64(userID))
+	if err != nil {
+		bot.Send(tgbotapi.NewMessage(chatID, "У тебя еще нет счета! Создай его с помощью /createcheck"))
+		return
+	}
+
+	text := fmt.Sprintf(
+		"💳 **Ваш банковский счет:**\n\n"+
+			"Имя счета: %s\n"+
+			"Номер счета: `%s`\n"+ // Пользователь видит только этот безопасный номер
+			"Баланс: %.2f",
+		userCheck.AccountName,
+		userCheck.AccountNumber,
+		userCheck.Amount,
+	)
+
+	msg := tgbotapi.NewMessage(chatID, text)
+	msg.ParseMode = "Markdown"
+	bot.Send(msg)
+}
+
+
+// 1. Обработчик команды /pay <номер_счета_получателя> <сумма>
+
+// 2. Обработчик команды /createcheck (создание счета для пользователя)
+func HandleCreateCheck(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
+	chatID := message.Chat.ID
+
+	if !message.Chat.IsPrivate() {
+		bot.Send(tgbotapi.NewMessage(chatID, "Эта команда работает только в личных сообщениях с ботом."))
+		return
+	}
+
+	if message.From == nil {
+		bot.Send(tgbotapi.NewMessage(chatID, "Не удалось определить пользователя"))
+		return
+	}
+
+	userID := message.From.ID
+
+	// Проверяем, может у пользователя уже есть счет
+	_, err := helpers.GetCheck(uint64(userID))
+	if err == nil {
+		bot.Send(tgbotapi.NewMessage(chatID, "У вас уже есть созданный счет!"))
+		return
+	}
+
+	// Логика создания счета в базе данных
+	err = helpers.CreateDefaultCheck(uint64(userID), message.From.UserName)
+	if err != nil {
+		bot.Send(tgbotapi.NewMessage(chatID, "Не удалось создать счет. Попробуйте позже."))
+		return
+	}
+
+	bot.Send(tgbotapi.NewMessage(chatID, "✅ Ваш счет успешно создан! Теперь вы можете пользоваться переводами."))
+}
+
+// HandlePay обрабатывает команду /pay <номер_счета_получателя> <сумма>
 func HandlePay(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
-    chat_id := message.Chat.ID
-    parsed_chat_id := std_helpers.ParseChatID(uint64(chat_id))
+	chatID := message.Chat.ID
 
-    _, err := helpers.GetChatById(parsed_chat_id)
-    if err != nil {
-        log.Printf("Ошибка получения чата: %v", err)
-        bot.Send(tgbotapi.NewMessage(chat_id, "❌ Чат не найден."))
-        return
-    }
-
-    args := strings.Fields(message.CommandArguments())
-    if len(args) < 1 {
-        bot.Send(tgbotapi.NewMessage(chat_id, "❌ Используйте: `/pay [сумма]`"))
-        return
-    }
-
-    amount, err := strconv.ParseFloat(args[0], 64)
-    if err != nil || amount <= 0 {
-        bot.Send(tgbotapi.NewMessage(chat_id, "❌ Неверная сумма."))
-        return
-    }
-    reply := message.ReplyToMessage
-    if reply == nil {
-        bot.Send(tgbotapi.NewMessage(chat_id, "❌ Команда должна быть ответом на сообщение."))
-        return
-    }
-
-    sender, err := helpers.GetUserByID(uint64(message.From.ID))
-    if err != nil {
-        bot.Send(tgbotapi.NewMessage(chat_id, "❌ Ваш профиль не найден."))
-        return
-    }
-
-    receiver, err := helpers.GetUserByID(uint64(reply.From.ID))
-    if err != nil {
-        bot.Send(tgbotapi.NewMessage(chat_id, "❌ Профиль получателя не найден."))
-        return
-    }
-
-    if sender.Balance < amount {
-        bot.Send(tgbotapi.NewMessage(chat_id, "❌ Недостаточно средств."))
-        return
-    }
-
-	memberRole, err := helpers.GetMemberRole(uint64(receiver.ID), uint64(parsed_chat_id))
-	if err != nil  {
-		bot.Send(tgbotapi.NewMessage(chat_id, "❌ У вас нет прав для выполнения этой команды."))
+	// Защита: работает только в личных сообщениях
+	if !message.Chat.IsPrivate() {
+		bot.Send(tgbotapi.NewMessage(chatID, "Эта команда работает только в личных сообщениях с ботом."))
 		return
 	}
 
-	if memberRole.BaseShort == "creator" {
-		bot.Send(tgbotapi.NewMessage(chat_id, "❌ У вас нет прав для выполнения этой команды.\n"+
-		"Нельзя переводить деньги создателю!"))
+	parsedChatID := std_helpers.ParseChatID(uint64(chatID))
+
+	if message.From == nil {
+		bot.Send(tgbotapi.NewMessage(chatID, "Не удалось определить пользователя"))
 		return
 	}
 
-	engine.DB.Model(&sender).Update("balance", sender.Balance - amount)
-    engine.DB.Model(&receiver).Update("balance", receiver.Balance + amount)
-	successMsg := fmt.Sprintf("✅ Успешно переведено `%.2f` $ пользователю %s", amount, reply.From.FirstName)
-    msg := tgbotapi.NewMessage(chat_id, successMsg)
-    msg.ParseMode = "Markdown"
-    bot.Send(msg)
+	userID := message.From.ID
+
+	// 1. Проверяем, есть ли счет у отправителя
+	senderCheck, err := helpers.GetCheck(uint64(userID))
+	if err != nil {
+		bot.Send(tgbotapi.NewMessage(chatID, "У тебя нет счета создай - /createcheck"))
+		return
+	}
+
+	// 2. Разбираем аргументы команды (/pay <номер_счета> <сумма>)
+	args := strings.Fields(message.CommandArguments())
+	if len(args) < 2 {
+		bot.Send(tgbotapi.NewMessage(chatID, "Использование: /pay <номер_счета_получателя> <сумма>"))
+		return
+	}
+
+	recipientAccountNum := args[0]
+	amountStr := args[1]
+
+	amount, err := strconv.ParseFloat(amountStr, 64)
+	if err != nil || amount <= 0 {
+		bot.Send(tgbotapi.NewMessage(chatID, "Неверный формат суммы! Укажите положительное число."))
+		return
+	}
+
+	// Запрет перевода самому себе
+	if senderCheck.AccountNumber == recipientAccountNum {
+		bot.Send(tgbotapi.NewMessage(chatID, "Нельзя переводить средства на свой собственный счет."))
+		return
+	}
+
+	// 3. Проверяем наличие счета получателя
+	recipientCheck, err := helpers.GetCheckByAccountNumber(recipientAccountNum)
+	if err != nil {
+		bot.Send(tgbotapi.NewMessage(chatID, "У получателя нет счета"))
+		return
+	}
+
+	// 4. Формируем текст подтверждения
+	msgText := fmt.Sprintf(
+		"Хотите перевести на банковский счет пользователя?\n\n"+
+			"Имя счета получателя: %s\n"+
+			"Номер счета получателя: %s\n"+
+			"Имя получателя: %s\n"+
+			"С счета: %s\n"+
+			"Сумма: %.2f",
+		recipientCheck.AccountName,
+		recipientCheck.AccountNumber,
+		recipientCheck.RecipientName,
+		senderCheck.AccountNumber,
+		amount,
+	)
+
+	// Формируем callback_data с точными параметрами перевода
+	yesCallbackData := fmt.Sprintf("pay_yes_%s_%.2f", recipientAccountNum, amount)
+
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("Да", yesCallbackData),
+			tgbotapi.NewInlineKeyboardButtonData("Нет", "pay_confirm_no"),
+		),
+	)
+
+	msg := tgbotapi.NewMessage(chatID, msgText)
+	msg.ReplyMarkup = keyboard
+
+	_, err = bot.Send(msg)
+	if err != nil {
+		_, _ = parsedChatID, err
+	}
+}
+
+// HandlePayCallback обрабатывает нажатия инлайн-кнопок подтверждения перевода
+func HandlePayCallback(bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery) {
+	// Снимаем спиннер загрузки с кнопки
+	callbackCfg := tgbotapi.NewCallback(callback.ID, "")
+	_, _ = bot.Request(callbackCfg)
+
+	chatID := callback.Message.Chat.ID
+	messageID := callback.Message.MessageID
+
+	// Отмена перевода
+	if callback.Data == "pay_confirm_no" {
+		editMsg := tgbotapi.NewEditMessageText(chatID, messageID, "❌ Перевод отменен.")
+		bot.Send(editMsg)
+		return
+	}
+
+	// Проверяем формат callback_data: "pay_yes_<account_num>_<amount>"
+	parts := strings.Split(callback.Data, "_")
+	if len(parts) < 4 || parts[0] != "pay" || parts[1] != "yes" {
+		return
+	}
+
+	targetAccountNum := parts[2]
+	amount, err := strconv.ParseFloat(parts[3], 64)
+	if err != nil || amount <= 0 {
+		editMsg := tgbotapi.NewEditMessageText(chatID, messageID, "❌ Некорректная сумма перевода.")
+		bot.Send(editMsg)
+		return
+	}
+
+	senderUserID := uint64(callback.From.ID)
+
+	// 1. Получаем счет отправителя
+	senderCheck, err := helpers.GetCheck(senderUserID)
+	if err != nil {
+		editMsg := tgbotapi.NewEditMessageText(chatID, messageID, "❌ У вас нет счета.")
+		bot.Send(editMsg)
+		return
+	}
+
+	// 2. Получаем счет получателя
+	targetCheck, err := helpers.GetCheckByAccountNumber(targetAccountNum)
+	if err != nil {
+		editMsg := tgbotapi.NewEditMessageText(chatID, messageID, "❌ У получателя нет счета.")
+		bot.Send(editMsg)
+		return
+	}
+
+	// 3. Проверяем достаточность средств
+	if senderCheck.Amount < amount {
+		editMsg := tgbotapi.NewEditMessageText(chatID, messageID, fmt.Sprintf("❌ Недостаточно средств на счете! Ваш баланс: %.2f", senderCheck.Amount))
+		bot.Send(editMsg)
+		return
+	}
+
+	// 4. Получаем имя получателя из базы данных
+	var recipient structs.User
+	recipientName := fmt.Sprintf("Пользователь #%d", targetCheck.UserID)
+	if err := engine.DB.Where("id = ?", targetCheck.UserID).First(&recipient).Error; err == nil {
+		if recipient.FirstName != "" {
+			recipientName = recipient.FirstName
+		} else if recipient.Username != "" {
+			recipientName = recipient.Username
+		}
+	}
+
+	// 5. Выполняем атомарный перевод средств в БД (транзакция GORM)
+	err = engine.DB.Transaction(func(tx *gorm.DB) error {
+		// Списание у отправителя
+		resSender := tx.Model(&structs.Check{}).
+			Where("id = ? AND amount >= ?", senderCheck.ID, amount).
+			Update("amount", gorm.Expr("amount - ?", amount))
+
+		if resSender.Error != nil {
+			return resSender.Error
+		}
+		if resSender.RowsAffected == 0 {
+			return fmt.Errorf("недостаточно средств или счет не найден")
+		}
+
+		// Зачисление получателю
+		if err := tx.Model(&structs.Check{}).
+			Where("id = ?", targetCheck.ID).
+			Update("amount", gorm.Expr("amount + ?", amount)).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		editMsg := tgbotapi.NewEditMessageText(chatID, messageID, "❌ Ошибка проведения транзакции. Попробуйте позже.")
+		bot.Send(editMsg)
+		return
+	}
+
+	// 6. Отправляем уведомление получателю перевода
+	recipientUserID := int64(targetCheck.UserID)
+	notifyMsgText := fmt.Sprintf(
+		"🎉 **Вам поступил перевод!**\n\n"+
+			"Сумма: **%.2f**\n"+
+			"От кого (номер счета): `%s`",
+		amount,
+		senderCheck.AccountNumber,
+	)
+
+	notifyMsg := tgbotapi.NewMessage(recipientUserID, notifyMsgText)
+	notifyMsg.ParseMode = "Markdown"
+	_, _ = bot.Send(notifyMsg)
+
+	// 7. Формируем и отправляем чек отправителю
+	receiptText := fmt.Sprintf(
+		"✅ **Перевод успешно выполнен!**\n\n"+
+			"**Имя счета получателя:** Основной счет\n"+
+			"**Номер счета получателя:** %s\n"+
+			"**Имя получателя:** %s\n"+
+			"**С счета:** %s\n"+
+			"**Сумма:** %.2f",
+		targetCheck.AccountNumber,
+		recipientName,
+		senderCheck.AccountNumber,
+		amount,
+	)
+
+	editMsg := tgbotapi.NewEditMessageText(chatID, messageID, receiptText)
+	editMsg.ParseMode = "Markdown"
+	bot.Send(editMsg)
 }
 
 func HandleTopBalance(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {

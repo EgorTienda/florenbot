@@ -1,26 +1,25 @@
 package main
 
 import (
+	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
 
-	"florenbot/consts"
-	helpers "florenbot/helpers"
-
-	"flag"
 	"florenbot/bones"
+	"florenbot/consts"
 	cache "florenbot/engine/cache"
 	helper "florenbot/engine/helpers"
 	engine "florenbot/engine/mysql"
 	structs "florenbot/engine/structs"
+	helpers "florenbot/helpers"
 	"florenbot/handlers"
 	admin_handlers "florenbot/handlers/admin"
-	"fmt"
-	"runtime"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/joho/godotenv"
@@ -85,6 +84,19 @@ func main() {
 
 	go func() {
 		for update := range updates {
+			// 1. Обработка нажатий на инлайн-кнопки (CallbackQuery)
+			if update.CallbackQuery != nil {
+				if update.CallbackQuery.Message != nil && update.CallbackQuery.Message.Time().Before(startTime) {
+					continue
+				}
+
+				if strings.HasPrefix(update.CallbackQuery.Data, "pay_") {
+					handlers.HandlePayCallback(bot, update.CallbackQuery)
+				}
+				continue
+			}
+
+			// 2. Обработка обычных сообщений
 			if update.Message == nil {
 				continue
 			}
@@ -114,8 +126,6 @@ func handleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	text := message.Text
 	lowerText := strings.ToLower(text)
 
-
-
 	if strings.Contains(lowerText, "спасибо") {
 		log.Printf("Зафиксирована благодарность от @%s", message.From.UserName)
 		handlers.HandleThanks(bot, message)
@@ -138,9 +148,7 @@ func handleCommands(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 	chatID := uint64(message.Chat.ID)
 	parsed_chat_id := helpers.ParseChatID(uint64(chatID))
 
-	// 2. ПРОВЕРКА ОГРАНИЧЕНИЙ
-	// Если функция возвращает true — значит, команда запрещена для этого пользователя
-	
+	// ПРОВЕРКА ОГРАНИЧЕНИЙ
 	result, err := helper.IsCommandRestricted(userID, uint64(parsed_chat_id), command)
 	log.Printf("DEBUG: [IsCommandRestricted] Result: %v", result)
 	log.Printf("DEBUG: [IsCommandRestricted] Error: %v", err)
@@ -153,7 +161,6 @@ func handleCommands(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 		bot.Send(tgbotapi.NewMessage(int64(chatID), "🚫 Вам запрещено использовать эту команду. Обратитесь к администрации чата."))
 		return
 	}
-
 
 	switch command {
 	case "start":
@@ -170,6 +177,10 @@ func handleCommands(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 		handlers.HandleClan(bot, message)
 	case "roulette":
 		handlers.HandleRoulette(bot, message)
+	case "check":
+		handlers.HandleMyAccount(bot, message)
+	case "createcheck":
+		handlers.HandleCreateCheck(bot, message)
 	case "bones":
 		bones.HandleBones(bot, message)
 	case "q":
@@ -192,7 +203,7 @@ func handleCommands(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 		admin_handlers.HandleSendMessage(bot, message)
 	case "bonus":
 		handlers.HandleBonus(bot, message)
-	case "vip": 
+	case "vip":
 		handlers.HandleVip(bot, message)
 	case "rep":
 		handlers.HandleReputation(bot, message)
@@ -259,20 +270,18 @@ func handleNewMembers(bot *tgbotapi.BotAPI, update tgbotapi.Update) {
 					UserID: int64(user_id),
 				},
 			})
-			continue // Если забанен, не добавляем в БД
+			continue
 		}
 
 		// 2. Добавляем или обновляем пользователя в таблице users
-		// Это нужно, чтобы у нас были актуальные FirstName/Username для отображения
 		user := structs.User{
 			ID:        user_id,
 			FirstName: newUser.FirstName,
 			Username:  newUser.UserName,
 		}
-		engine.DB.Save(&user) // Save создаст запись, если её нет, или обновит, если есть
+		engine.DB.Save(&user)
 
 		// 3. Добавляем запись в таблицу members
-		// Используем FirstOrCreate, чтобы не дублировать запись, если юзер уже есть в этом чате
 		member := structs.Member{
 			ChatID: chat_id,
 			UserID: user_id,
