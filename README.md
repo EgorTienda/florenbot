@@ -58,7 +58,7 @@
 ### 1. Клонируйте репозиторий:
 
 ```bash
-    git clone [https://github.com/FlorenBot/florenbot.git](https://github.com/FlorenBot/florenbot.git)
+    git clone https://github.com/FlorenBot/florenbot.git
     cd florenbot
  ```
 
