@@ -1,58 +1,65 @@
+<div align="center">
 
-![License](https://img.shields.io/badge/license-GPL--3.0-blue)
-![Language](https://img.shields.io/badge/language-Go-00ADD8)
-![Telegram](https://img.shields.io/badge/platform-Telegram-26A5E4)
+# 🤖 FlorenBot
 
-### Игровой бот на Go
+**Открытый (Open Source) игровой бот на Go для развлечения в групповых чатах и беседах Telegram**
 
-Что за бот?
+[![License](https://img.shields.io/badge/License-GPL_v3-blue.svg)](LICENSE)
+[![Language](https://img.shields.io/badge/Language-Go_1.22+-00ADD8?logo=go&logoColor=white)](https://go.dev/)
+[![Platform](https://img.shields.io/badge/Platform-Telegram-26A5E4?logo=telegram&logoColor=white)](https://core.telegram.org/bots)
 
-Это игровой бот для развлечения в беседах, данный бот он Open Source его можно использовать везде
+---
 
-Почему мы отличаемся от других ботов?
+### 🌐 Сообщество и ресурсы
 
-1. Регулряные обновления: Мы выпускаем обновления чаще, чтобы вас радовать
-2. Бот комофортный и веселый :)
+[![Releases](https://img.shields.io/badge/GitHub-Releases-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/FlorenBot/florenbot/releases)
+[![Telegram Channel](https://img.shields.io/badge/Telegram-Канал_Dev-26A5E4?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/florenbotdev)
+[![Reddit](https://img.shields.io/badge/Reddit-r%2Fflorenbot-FF4500?style=for-the-badge&logo=reddit&logoColor=white)](https://www.reddit.com/r/florenbot)
+[![Patreon](https://img.shields.io/badge/Patreon-Поддержать-FF424D?style=for-the-badge&logo=patreon&logoColor=white)](https://www.patreon.com/c/egorluchiy2026)
+</div>
 
-## О Боте
+---
 
-Этот проект представляет собой высокопроизводительного игрового бота, написанного на языке Go, с использованием MySQL для хранения постоянных данных и Redis для кэширования и работы с состоянием в реальном времени.
+## 🔥 Преимущества
 
-## Архитектура:
+1. **Регулярные обновления:** Бот активно развивается и пополняется новым функционалом.
+2. **Высокая скорость и комфорт:** Мгновенный отклик на команды благодаря оптимизированному Go-коду.
+3. **Open Source:** Вы можете запустить собственного бота на базе нашего исходного кода.
 
-    Язык: Go (Golang) — обеспечивает высокую скорость обработки запросов и эффективную многопоточность.
+---
 
-    База данных (MySQL): Хранение профилей игроков
+## 🛠️ Архитектура и стек
 
-    Кэш (Redis): Хранение сессий
+* **Язык:** Go (Golang) — обеспечивает высокую скорость обработки запросов и эффективную многопоточность через горутины.
+* **База данных (MySQL / MariaDB):** Надежное хранение профилей игроков и игрового прогресса.
+* **Кэш (Redis):** Хранение сессий, состояний в реальном времени и минимизация нагрузки на SQL.
 
-## Основные возможности
+---
 
-    Система авторизации: Быстрая проверка данных через Redis с последующей синхронизацией с MySQL.
+## ✨ Основные возможности
 
-    Игровой цикл: Обработка событий в реальном времени.
+* **Быстрая авторизация:** Проверка данных через Redis с последующей асинхронной синхронизацией с MySQL.
+* **Игровой цикл:** Обработка событий и игровых команд в реальном времени.
+* **Масштабируемость:** Способность обрабатывать тысячи одновременных запросов в чатах.
 
-    Масштабируемость: Использование горутин для обработки тысяч одновременных подключений.
+---
 
-    Оптимизация: Минимизация нагрузки на SQL за счет кэширования частых запросов в Redis.
+## 📋 Требования к запуску
 
-## Требования к запуску
+* **Go** 1.22+
+* **MySQL** 8.0 / **MariaDB** 11.0+
+* **Redis** 7.0+
+* **Docker** & **Docker Compose**
 
-    Go 1.26+
+---
 
-    MySQL 8.0/MariaDB 11.0+
+## 🚀 Установка и запуск
 
-    Redis 7.0+
+### 1. Клонируйте репозиторий:
 
-    Docker 
-
-## Установка и запуск
-
-1. Клонируйте репозиторий
-
- ```bash
-   git clone <ссылка-на-репозиторий> florenbot
-   cd florenbot
+```bash
+    git clone [https://github.com/FlorenBot/florenbot.git](https://github.com/FlorenBot/florenbot.git)
+    cd florenbot
  ```
 
 2. **Настройка окружения:**
